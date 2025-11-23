@@ -6,24 +6,43 @@ from datetime import datetime, timedelta
 import os
 
 # --- KONFIGURATION ---
-st.set_page_config(page_title="Stromlast Monitor", layout="wide")
-st.title("⚡ Deutscher Stromverbrauch - Dashboard")
+st.set_page_config(page_title="European Power Monitor", layout="wide")
 
-# Dateiname für den lokalen Speicher
-CSV_FILE = "stromlast_historie.csv"
+# 1. LÄNDER-KONFIGURATION
+COUNTRIES = {
+    "de": "Deutschland 🇩🇪",
+    "fr": "Frankreich 🇫🇷",
+    "at": "Österreich 🇦🇹",
+    "ch": "Schweiz 🇨🇭",
+    "it": "Italien 🇮🇹"
+}
+
+# --- SIDEBAR ---
+st.sidebar.title("Einstellungen")
+selected_country_code = st.sidebar.selectbox(
+    "Land auswählen:",
+    options=list(COUNTRIES.keys()),
+    format_func=lambda x: COUNTRIES[x]
+)
+
+country_name = COUNTRIES[selected_country_code]
+st.title(f"⚡ Stromlast Monitor - {country_name}")
+
+CSV_FILE = f"stromlast_historie_{selected_country_code}.csv"
+
 
 # --- FUNKTIONEN ---
 
-def fetch_data_from_api(start_date, end_date):
-    """Lädt Daten für einen Zeitraum von der API."""
+def fetch_data_from_api(country_code, start_date, end_date):
+    """Lädt Daten für ein spezifisches Land und Zeitraum."""
     data_frames = []
     headers = {'User-Agent': 'Mozilla/5.0 PythonScript/1.0'}
     
     start_year = start_date.year
     end_year = end_date.year
     
-    progress_bar = st.progress(0)
-    status_text = st.empty()
+    progress_bar = st.sidebar.progress(0)
+    status_text = st.sidebar.empty()
     
     years_to_load = range(start_year, end_year + 1)
     
@@ -31,10 +50,11 @@ def fetch_data_from_api(start_date, end_date):
         current_start = start_date.strftime("%Y-%m-%d") if year == start_year else f"{year}-01-01"
         current_end = end_date.strftime("%Y-%m-%d") if year == end_year else f"{year}-12-31"
         
-        status_text.text(f"Lade API Daten: {current_start} bis {current_end}...")
+        status_text.text(f"Lade {country_code.upper()} Daten: {year}...")
         
         try:
-            url = f"https://api.energy-charts.info/public_power?country=de&start={current_start}&end={current_end}&lang=en"
+            # Versuch 1: public_power (meistens korrekt für Last)
+            url = f"https://api.energy-charts.info/public_power?country={country_code}&start={current_start}&end={current_end}&lang=en"
             r = requests.get(url, headers=headers, timeout=30)
             data_json = r.json()
             
@@ -42,11 +62,25 @@ def fetch_data_from_api(start_date, end_date):
             timestamps = data_json.get('unix_seconds', [])
             
             load_vals = []
-            for entry in source:
-                if 'load' in entry.get('name', '').lower():
-                    load_vals = entry['data']
-                    break
             
+            # --- VERBESSERTE SUCHE NACH DER RICHTIGEN LAST ---
+            for entry in source:
+                name = entry.get('name', '').lower()
+                
+                # Ausschlusskriterien: Wir wollen KEINE Residuallast und KEINEN Pumpspeicher-Verbrauch
+                if 'residual' in name or 'pumped' in name or 'share' in name:
+                    continue
+                
+                # Volltreffer Suche
+                if name == 'load' or name == 'last' or name == 'consommation' or name == 'total load':
+                    load_vals = entry['data']
+                    break # Gefunden!
+                
+                # Fallback Suche (falls kein Volltreffer)
+                if 'load' in name or 'consumption' in name:
+                    if not load_vals: # Nur nehmen wenn wir noch nichts besseres haben
+                        load_vals = entry['data']
+
             if timestamps and load_vals:
                 min_len = min(len(timestamps), len(load_vals))
                 df_temp = pd.DataFrame({
@@ -56,7 +90,7 @@ def fetch_data_from_api(start_date, end_date):
                 data_frames.append(df_temp)
                 
         except Exception as e:
-            st.warning(f"Fehler bei Jahr {year}: {e}")
+            st.sidebar.warning(f"Fehler bei Jahr {year}: {e}")
             
         progress_bar.progress((i + 1) / len(years_to_load))
 
@@ -67,52 +101,52 @@ def fetch_data_from_api(start_date, end_date):
         return pd.concat(data_frames, ignore_index=True)
     return pd.DataFrame()
 
-def load_and_update_data():
-    """Lädt lokale CSV und holt nur fehlende neue Daten."""
+def load_and_update_data(country_code, csv_file_path):
     full_df = pd.DataFrame()
     last_stored_date = None
     
     # 1. VERSUCH: Bestehende CSV laden
-    if os.path.exists(CSV_FILE):
+    if os.path.exists(csv_file_path):
         try:
-            full_df = pd.read_csv(CSV_FILE)
+            full_df = pd.read_csv(csv_file_path)
             full_df['Zeitstempel'] = pd.to_datetime(full_df['Zeitstempel'], utc=True)
             
             if not full_df.empty:
                 last_stored_date = full_df['Zeitstempel'].max()
-                st.toast(f"Historie geladen bis: {last_stored_date.date()}", icon="💾")
+                st.sidebar.success(f"Lokal: Daten bis {last_stored_date.date()}")
         except Exception as e:
             st.error(f"Konnte lokale CSV nicht lesen: {e}")
 
-    # 2. PRÜFUNG: Was fehlt bis heute?
+    # 2. PRÜFUNG: Was fehlt?
     today = pd.Timestamp.now(tz='UTC').normalize()
     
     if last_stored_date is None:
+        st.info(f"Initialisiere Datenbank für {COUNTRIES[country_code]} (ab 2015)...")
         start_date = pd.Timestamp("2015-01-01", tz='UTC')
     else:
         start_date = last_stored_date + timedelta(days=1)
 
     # 3. UPDATE
     if start_date <= today:
-        new_data = fetch_data_from_api(start_date, today)
+        new_data = fetch_data_from_api(country_code, start_date, today)
         
         if not new_data.empty:
             full_df = pd.concat([full_df, new_data], ignore_index=True)
             full_df = full_df.drop_duplicates(subset=['Zeitstempel'])
             full_df = full_df.sort_values('Zeitstempel')
             
-            full_df.to_csv(CSV_FILE, index=False)
-            st.toast(f"{len(new_data)} neue Datensätze geladen.", icon="📥")
+            full_df.to_csv(csv_file_path, index=False)
+            st.toast(f"Update: {len(new_data)} Werte geladen.", icon="📥")
             
     return full_df
 
 # --- HAUPTPROGRAMM ---
 
 # Daten laden
-df = load_and_update_data()
+df = load_and_update_data(selected_country_code, CSV_FILE)
 
 if df.empty:
-    st.error("Keine Daten verfügbar.")
+    st.warning(f"Keine Last-Daten für {country_name} gefunden. Möglicherweise liefert die API für dieses Land keine 'Load'-Daten unter 'public_power'.")
     st.stop()
 
 # Zeitzone anpassen
@@ -128,15 +162,18 @@ pivot_table = df_daily.pivot_table(index='TagDesJahres', columns='Jahr', values=
 
 df_daily['Veränderung_Vorjahr_Prozent'] = df_daily['Last_GW_7d_Mean'].pct_change(364) * 100
 
-# --- CHART 1: SAISONALITÄT ---
-st.subheader("1. Saisonale Entwicklung (Jahre im Vergleich)")
+# --- CHART 1 ---
+st.subheader(f"1. Saisonale Entwicklung ({country_name})")
 
 fig1 = go.Figure()
 years = pivot_table.columns
-current_year = years[-1]
-last_year = years[-2] if len(years) > 1 else current_year
-year_minus_2 = years[-3] if len(years) > 2 else current_year
-year_minus_3 = years[-4] if len(years) > 3 else current_year
+if len(years) > 0:
+    current_year = years[-1]
+    last_year = years[-2] if len(years) > 1 else current_year
+    year_minus_2 = years[-3] if len(years) > 2 else current_year
+    year_minus_3 = years[-4] if len(years) > 3 else current_year
+else:
+    current_year = last_year = year_minus_2 = year_minus_3 = None
 
 background_label_set = False
 
@@ -174,9 +211,8 @@ fig1.update_layout(
 st.plotly_chart(fig1, use_container_width=True)
 
 
-# --- CHART 2: TREND ---
-st.subheader("2. Trend-Analyse: Veränderung zum Vorjahr")
-st.markdown("Zeigt, ob wir aktuell **mehr (Grün)** oder **weniger (Rot)** Strom verbrauchen als zur gleichen Zeit im Vorjahr.")
+# --- CHART 2 ---
+st.subheader(f"2. Trend-Analyse: Veränderung zum Vorjahr ({country_name})")
 
 df_trend = df_daily.dropna(subset=['Veränderung_Vorjahr_Prozent'])
 df_trend['pos'] = df_trend['Veränderung_Vorjahr_Prozent'].apply(lambda x: x if x > 0 else 0)
@@ -211,14 +247,15 @@ fig2.update_layout(
 
 st.plotly_chart(fig2, use_container_width=True)
 
-# --- FUSSZEILE / METRIKEN ---
-last_val = df_daily['Last_GW_7d_Mean'].iloc[-1]
-last_change = df_daily['Veränderung_Vorjahr_Prozent'].iloc[-1]
+# --- FUSSZEILE ---
+if not df_daily.empty:
+    last_val = df_daily['Last_GW_7d_Mean'].iloc[-1]
+    last_change = df_daily['Veränderung_Vorjahr_Prozent'].iloc[-1]
+    
+    col1, col2 = st.columns(2)
+    # HIER WAR DER FEHLER: country_code -> selected_country_code
+    col1.metric(f"Aktueller 7-Tage-Schnitt ({selected_country_code.upper()})", f"{last_val:.2f} GW")
+    col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
 
-col1, col2 = st.columns(2)
-col1.metric("Aktueller 7-Tage-Schnitt", f"{last_val:.2f} GW")
-col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
-
-# --- QUELLE ---
 st.divider()
-st.caption("Datenquelle: Energy Charts (Fraunhofer ISE) / Public Power Load Deutschland (Last + Importe - Exporte)")
+st.caption("Datenquelle: Energy Charts (Fraunhofer ISE).")
