@@ -119,22 +119,16 @@ if df.empty:
 df['Zeitstempel'] = df['Zeitstempel'].dt.tz_convert('Europe/Berlin')
 
 # --- DATENVERARBEITUNG ---
-# 1. Tägliche Mittelwerte
 df_daily = df.set_index('Zeitstempel').resample('D')['Last_GW'].mean().to_frame(name='Last_GW_Tag')
-
-# 2. Glättung (7 Tage)
 df_daily['Last_GW_7d_Mean'] = df_daily['Last_GW_Tag'].rolling(window=7).mean()
 
-# 3. Pivot für Chart 1 (Jahresvergleich)
 df_daily['TagDesJahres'] = df_daily.index.dayofyear
 df_daily['Jahr'] = df_daily.index.year
 pivot_table = df_daily.pivot_table(index='TagDesJahres', columns='Jahr', values='Last_GW_7d_Mean')
 
-# 4. Berechnung für Chart 2 (Trend vs Vorjahr)
-# Wir vergleichen mit dem Wert vor exakt 52 Wochen (364 Tage), um Wochentags-Effekte zu minimieren
 df_daily['Veränderung_Vorjahr_Prozent'] = df_daily['Last_GW_7d_Mean'].pct_change(364) * 100
 
-# --- CHART 1: SAISONALITÄT (Jahre übereinander) ---
+# --- CHART 1: SAISONALITÄT ---
 st.subheader("1. Saisonale Entwicklung (Jahre im Vergleich)")
 
 fig1 = go.Figure()
@@ -180,68 +174,51 @@ fig1.update_layout(
 st.plotly_chart(fig1, use_container_width=True)
 
 
-# --- CHART 2: TREND (Veränderung zum Vorjahr) ---
+# --- CHART 2: TREND ---
 st.subheader("2. Trend-Analyse: Veränderung zum Vorjahr")
 st.markdown("Zeigt, ob wir aktuell **mehr (Grün)** oder **weniger (Rot)** Strom verbrauchen als zur gleichen Zeit im Vorjahr.")
 
-# Daten vorbereiten (erst ab 2016, da wir ein Vorjahr brauchen)
 df_trend = df_daily.dropna(subset=['Veränderung_Vorjahr_Prozent'])
-
-# Für Plotly Area-Chart müssen wir positive und negative Werte trennen
-# Trick: Wir erstellen zwei Serien, eine für Grün (>0) und eine für Rot (<0)
 df_trend['pos'] = df_trend['Veränderung_Vorjahr_Prozent'].apply(lambda x: x if x > 0 else 0)
 df_trend['neg'] = df_trend['Veränderung_Vorjahr_Prozent'].apply(lambda x: x if x < 0 else 0)
 
 fig2 = go.Figure()
 
-# Grüne Fläche (Wachstum)
 fig2.add_trace(go.Scatter(
-    x=df_trend.index, y=df_trend['pos'],
-    mode='none', # Keine Linie, nur Füllung
-    fill='tozeroy',
-    fillcolor='rgba(44, 160, 44, 0.5)', # Grün transparent
-    name='Mehr Verbrauch',
+    x=df_trend.index, y=df_trend['pos'], mode='none', fill='tozeroy',
+    fillcolor='rgba(44, 160, 44, 0.5)', name='Mehr Verbrauch',
     hovertemplate="%{y:.1f}%<extra></extra>"
 ))
 
-# Rote Fläche (Rückgang)
 fig2.add_trace(go.Scatter(
-    x=df_trend.index, y=df_trend['neg'],
-    mode='none',
-    fill='tozeroy',
-    fillcolor='rgba(214, 39, 40, 0.5)', # Rot transparent
-    name='Weniger Verbrauch',
+    x=df_trend.index, y=df_trend['neg'], mode='none', fill='tozeroy',
+    fillcolor='rgba(214, 39, 40, 0.5)', name='Weniger Verbrauch',
     hovertemplate="%{y:.1f}%<extra></extra>"
 ))
 
-# Die Linie selbst (fein darüber gelegt für Präzision)
 fig2.add_trace(go.Scatter(
-    x=df_trend.index, y=df_trend['Veränderung_Vorjahr_Prozent'],
-    mode='lines',
-    line=dict(color='gray', width=1),
-    name='Trend Linie',
-    showlegend=False,
-    hoverinfo='skip'
+    x=df_trend.index, y=df_trend['Veränderung_Vorjahr_Prozent'], mode='lines',
+    line=dict(color='gray', width=1), name='Trend Linie', showlegend=False, hoverinfo='skip'
 ))
 
-# Nulllinie hervorheben
 fig2.add_hline(y=0, line_width=1.5, line_color="black")
 
 fig2.update_layout(
     xaxis_title="Datum", yaxis_title="Veränderung (%)",
     template="plotly_white", hovermode="x unified", height=400,
-    showlegend=True,
-    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
 
 st.plotly_chart(fig2, use_container_width=True)
 
-# --- METRIKEN (FUSSZEILE) ---
+# --- FUSSZEILE / METRIKEN ---
 last_val = df_daily['Last_GW_7d_Mean'].iloc[-1]
 last_change = df_daily['Veränderung_Vorjahr_Prozent'].iloc[-1]
-last_date = df_daily.index[-1].strftime('%d.%m.%Y')
 
 col1, col2 = st.columns(2)
 col1.metric("Aktueller 7-Tage-Schnitt", f"{last_val:.2f} GW")
-col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", 
-            delta_color="inverse") # inverse: Rot ist gut (beim Sparen), Grün ist Wachstum
+col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
+
+# --- QUELLE ---
+st.divider()
+st.caption("Datenquelle: Energy Charts (Fraunhofer ISE) / Public Power Load Deutschland (Last + Importe - Exporte)")
