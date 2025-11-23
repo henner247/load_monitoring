@@ -9,12 +9,15 @@ import os
 st.set_page_config(page_title="European Power Monitor", layout="wide")
 
 # 1. LÄNDER-KONFIGURATION
+# Einfach hier neue Länderkürzel hinzufügen, wenn die API sie unterstützt.
 COUNTRIES = {
     "de": "Deutschland 🇩🇪",
     "fr": "Frankreich 🇫🇷",
     "at": "Österreich 🇦🇹",
     "ch": "Schweiz 🇨🇭",
-    "it": "Italien 🇮🇹"
+    "it": "Italien 🇮🇹",
+    "nl": "Niederlande 🇳🇱",
+    "be": "Belgien 🇧🇪"
 }
 
 # --- SIDEBAR ---
@@ -28,6 +31,7 @@ selected_country_code = st.sidebar.selectbox(
 country_name = COUNTRIES[selected_country_code]
 st.title(f"⚡ Stromlast Monitor - {country_name}")
 
+# Dynamischer Dateiname pro Land
 CSV_FILE = f"stromlast_historie_{selected_country_code}.csv"
 
 
@@ -71,8 +75,8 @@ def fetch_data_from_api(country_code, start_date, end_date):
                 if 'residual' in name or 'pumped' in name or 'share' in name:
                     continue
                 
-                # Volltreffer Suche
-                if name == 'load' or name == 'last' or name == 'consommation' or name == 'total load':
+                # Volltreffer Suche (inkl. Übersetzungen die vorkommen könnten)
+                if name in ['load', 'last', 'consommation', 'total load', 'electricity consumption']:
                     load_vals = entry['data']
                     break # Gefunden!
                 
@@ -121,7 +125,7 @@ def load_and_update_data(country_code, csv_file_path):
     today = pd.Timestamp.now(tz='UTC').normalize()
     
     if last_stored_date is None:
-        st.info(f"Initialisiere Datenbank für {COUNTRIES[country_code]} (ab 2015)...")
+        st.info(f"Initialisiere Datenbank für {COUNTRIES[country_code]} (ab 2015)... Bitte warten.")
         start_date = pd.Timestamp("2015-01-01", tz='UTC')
     else:
         start_date = last_stored_date + timedelta(days=1)
@@ -146,7 +150,7 @@ def load_and_update_data(country_code, csv_file_path):
 df = load_and_update_data(selected_country_code, CSV_FILE)
 
 if df.empty:
-    st.warning(f"Keine Last-Daten für {country_name} gefunden. Möglicherweise liefert die API für dieses Land keine 'Load'-Daten unter 'public_power'.")
+    st.warning(f"Keine Last-Daten für {country_name} gefunden. Die API liefert für dieses Land möglicherweise keine 'Load'-Daten im Standard-Format.")
     st.stop()
 
 # Zeitzone anpassen
@@ -253,7 +257,7 @@ if not df_daily.empty:
     last_change = df_daily['Veränderung_Vorjahr_Prozent'].iloc[-1]
     
     col1, col2 = st.columns(2)
-    # HIER WAR DER FEHLER: country_code -> selected_country_code
+    # Korrigierte Variablenverwendung
     col1.metric(f"Aktueller 7-Tage-Schnitt ({selected_country_code.upper()})", f"{last_val:.2f} GW")
     col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
 
