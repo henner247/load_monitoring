@@ -283,4 +283,4 @@ if not df_daily.empty:
     col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
 
 st.divider()
-st.caption("Datenquelle: Energy Charts (Fraunhofer ISE).")
+st.caption("Datenquelle: Energy Charts (Fraunhofer ISE). Power Load + Importe - Exporte")
