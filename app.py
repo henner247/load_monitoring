@@ -9,7 +9,6 @@ import os
 st.set_page_config(page_title="European Power Monitor", layout="wide")
 
 # 1. LÄNDER-KONFIGURATION
-# Einfach hier neue Länderkürzel hinzufügen, wenn die API sie unterstützt.
 COUNTRIES = {
     "de": "Deutschland 🇩🇪",
     "fr": "Frankreich 🇫🇷",
@@ -31,7 +30,6 @@ selected_country_code = st.sidebar.selectbox(
 country_name = COUNTRIES[selected_country_code]
 st.title(f"⚡ Stromlast Monitor - {country_name}")
 
-# Dynamischer Dateiname pro Land
 CSV_FILE = f"stromlast_historie_{selected_country_code}.csv"
 
 
@@ -57,7 +55,6 @@ def fetch_data_from_api(country_code, start_date, end_date):
         status_text.text(f"Lade {country_code.upper()} Daten: {year}...")
         
         try:
-            # Versuch 1: public_power (meistens korrekt für Last)
             url = f"https://api.energy-charts.info/public_power?country={country_code}&start={current_start}&end={current_end}&lang=en"
             r = requests.get(url, headers=headers, timeout=30)
             data_json = r.json()
@@ -67,22 +64,19 @@ def fetch_data_from_api(country_code, start_date, end_date):
             
             load_vals = []
             
-            # --- VERBESSERTE SUCHE NACH DER RICHTIGEN LAST ---
+            # --- INTELLIGENTE SUCHE NACH DER LAST ---
             for entry in source:
                 name = entry.get('name', '').lower()
                 
-                # Ausschlusskriterien: Wir wollen KEINE Residuallast und KEINEN Pumpspeicher-Verbrauch
                 if 'residual' in name or 'pumped' in name or 'share' in name:
                     continue
                 
-                # Volltreffer Suche (inkl. Übersetzungen die vorkommen könnten)
                 if name in ['load', 'last', 'consommation', 'total load', 'electricity consumption']:
                     load_vals = entry['data']
-                    break # Gefunden!
+                    break
                 
-                # Fallback Suche (falls kein Volltreffer)
                 if 'load' in name or 'consumption' in name:
-                    if not load_vals: # Nur nehmen wenn wir noch nichts besseres haben
+                    if not load_vals: 
                         load_vals = entry['data']
 
             if timestamps and load_vals:
@@ -150,7 +144,7 @@ def load_and_update_data(country_code, csv_file_path):
 df = load_and_update_data(selected_country_code, CSV_FILE)
 
 if df.empty:
-    st.warning(f"Keine Last-Daten für {country_name} gefunden. Die API liefert für dieses Land möglicherweise keine 'Load'-Daten im Standard-Format.")
+    st.warning(f"Keine Last-Daten für {country_name} gefunden.")
     st.stop()
 
 # Zeitzone anpassen
@@ -166,11 +160,18 @@ pivot_table = df_daily.pivot_table(index='TagDesJahres', columns='Jahr', values=
 
 df_daily['Veränderung_Vorjahr_Prozent'] = df_daily['Last_GW_7d_Mean'].pct_change(364) * 100
 
+# --- HELFER: X-Achse als Datum formatieren ---
+# Wir erzeugen ein "Dummy-Datum" für das Jahr 2024 (Schaltjahr, um sicherzugehen),
+# damit Plotly die X-Achse als Monate formatieren kann.
+x_axis_dates = [datetime(2024, 1, 1) + timedelta(days=d-1) for d in pivot_table.index]
+
+
 # --- CHART 1 ---
 st.subheader(f"1. Saisonale Entwicklung ({country_name})")
 
 fig1 = go.Figure()
 years = pivot_table.columns
+
 if len(years) > 0:
     current_year = years[-1]
     last_year = years[-2] if len(years) > 1 else current_year
@@ -202,15 +203,35 @@ for year in years:
     elif year == current_year: color, width, opacity, name = 'red', 4, 1.0, f"{year} (Aktuell)"
 
     fig1.add_trace(go.Scatter(
-        x=pivot_table.index, y=pivot_table[year], mode='lines', name=name,
-        line=dict(color=color, width=width), opacity=opacity, showlegend=showlegend,
+        x=x_axis_dates, # HIER NUTZEN WIR JETZT DATUM STATT INT
+        y=pivot_table[year], 
+        mode='lines', 
+        name=name,
+        line=dict(color=color, width=width), 
+        opacity=opacity, 
+        showlegend=showlegend,
         hovertemplate=f"Jahr {year}: %{{y:.2f}} GW<extra></extra>"
     ))
 
+# LAYOUT UPDATE
 fig1.update_layout(
-    xaxis_title="Tag des Jahres", yaxis_title="Last (GW)",
-    template="plotly_white", hovermode="x unified", height=500,
-    legend=dict(yanchor="top", y=0.99, xanchor="right", x=0.99)
+    xaxis=dict(
+        tickformat="%b", # Formatierung als "Jan", "Feb" etc.
+        dtick="M1"       # Jeden Monat ein Tick
+    ),
+    yaxis_title="Last (GW)",
+    template="plotly_white", 
+    hovermode="x unified", 
+    height=550,
+    # HIER DIE NEUE LEGENDE: MITTIG OBEN
+    legend=dict(
+        orientation="h",       # Horizontal
+        yanchor="bottom",
+        y=1.02,                # Knapp über dem Chart
+        xanchor="center",
+        x=0.5                  # Horizontal zentriert
+    ),
+    margin=dict(t=50) # Etwas mehr Platz oben für die Legende
 )
 st.plotly_chart(fig1, use_container_width=True)
 
@@ -246,7 +267,8 @@ fig2.add_hline(y=0, line_width=1.5, line_color="black")
 fig2.update_layout(
     xaxis_title="Datum", yaxis_title="Veränderung (%)",
     template="plotly_white", hovermode="x unified", height=400,
-    showlegend=True, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+    showlegend=True, 
+    legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
 )
 
 st.plotly_chart(fig2, use_container_width=True)
@@ -257,7 +279,6 @@ if not df_daily.empty:
     last_change = df_daily['Veränderung_Vorjahr_Prozent'].iloc[-1]
     
     col1, col2 = st.columns(2)
-    # Korrigierte Variablenverwendung
     col1.metric(f"Aktueller 7-Tage-Schnitt ({selected_country_code.upper()})", f"{last_val:.2f} GW")
     col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
 
