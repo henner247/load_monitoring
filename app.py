@@ -8,15 +8,17 @@ import os
 # --- KONFIGURATION ---
 st.set_page_config(page_title="European Power Monitor", layout="wide")
 
-# 1. LÄNDER-KONFIGURATION
+# 1. LÄNDER-KONFIGURATION (mit Spanien und Polen)
 COUNTRIES = {
     "de": "Deutschland 🇩🇪",
     "fr": "Frankreich 🇫🇷",
-    "at": "Österreich 🇦🇹",
-    "ch": "Schweiz 🇨🇭",
     "it": "Italien 🇮🇹",
+    "es": "Spanien 🇪🇸",  # NEU: Spanien
+    "pl": "Polen 🇵🇱",    # NEU: Polen
     "nl": "Niederlande 🇳🇱",
-    "be": "Belgien 🇧🇪"
+    "be": "Belgien 🇧🇪",
+    "at": "Österreich 🇦🇹",
+    "ch": "Schweiz 🇨🇭" # Die Schweiz ist kein EU-Land, aber oft relevant für den Markt
 }
 
 # --- SIDEBAR ---
@@ -31,7 +33,6 @@ country_name = COUNTRIES[selected_country_code]
 st.title(f"⚡ Stromlast Monitor - {country_name}")
 
 CSV_FILE = f"stromlast_historie_{selected_country_code}.csv"
-
 
 # --- FUNKTIONEN ---
 
@@ -283,4 +284,5 @@ if not df_daily.empty:
     col2.metric("Veränderung zum Vorjahr", f"{last_change:+.1f} %", delta_color="inverse")
 
 st.divider()
+
 st.caption("Datenquelle: Energy Charts (Fraunhofer ISE). Power Load + Importe - Exporte")
