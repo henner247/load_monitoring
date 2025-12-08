@@ -309,13 +309,13 @@ if not df_trend.empty:
 
     fig2.add_trace(go.Scatter(
         x=df_trend.index, y=df_trend['pos'], mode='none', fill='tozeroy',
-        fillcolor='rgba(255, 0, 0, 0.5)', name='Mehr Verbrauch', # Rot = Schlecht/Mehr
+        fillcolor='rgba(0, 128, 0, 0.5)', name='Mehr Verbrauch', # Rot = Schlecht/Mehr
         hovertemplate="%{y:.1f}%<extra></extra>"
     ))
 
     fig2.add_trace(go.Scatter(
         x=df_trend.index, y=df_trend['neg'], mode='none', fill='tozeroy',
-        fillcolor='rgba(0, 128, 0, 0.5)', name='Weniger Verbrauch', # Grün = Gut/Sparsam
+        fillcolor='rgba(255, 0, 0, 0.5)', name='Weniger Verbrauch', # Grün = Gut/Sparsam
         hovertemplate="%{y:.1f}%<extra></extra>"
     ))
 
@@ -349,4 +349,5 @@ if not df_daily.empty:
 
 st.divider()
 st.caption("Datenquelle: Energy Charts (Fraunhofer ISE). Aggregation basiert auf lokalen CSV-Dateien.")
+
 
