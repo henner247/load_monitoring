@@ -19,9 +19,9 @@ COUNTRIES = {
     "nl": "Niederlande 🇳🇱",
     "be": "Belgien 🇧🇪",
     "at": "Österreich 🇦🇹",
+    "cz": "Tschechien 🇨🇿",  # <--- NEU HINZUGEFÜGT
     "ch": "Schweiz 🇨🇭" 
 }
-
 # --- 2. SIDEBAR & AUSWAHL ---
 st.sidebar.title("Einstellungen")
 
@@ -349,3 +349,4 @@ if not df_daily.empty:
 
 st.divider()
 st.caption("Datenquelle: Energy Charts (Fraunhofer ISE). Aggregation basiert auf lokalen CSV-Dateien.")
+
