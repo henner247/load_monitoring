@@ -4,6 +4,7 @@ import plotly.graph_objects as go
 import requests
 from datetime import datetime, timedelta
 import os
+import time # Import needed for the rate limit pause
 
 # --- 1. KONFIGURATION ---
 st.set_page_config(page_title="European Power Monitor", layout="wide")
@@ -143,10 +144,10 @@ def load_and_update_single_country(country_code, csv_file_path):
 
 
 def load_eu_aggregated_data():
-    """Lädt ALLE Länder-CSVs (außer Schweiz) und summiert sie."""
+    """Lads updates for ALL country CSVs (except Switzerland) and sums them."""
     df_list = []
     
-    # Alle Keys außer 'ch'
+    # All keys except 'ch'
     eu_codes = [c for c in COUNTRIES.keys() if c != 'ch']
     
     progress_text = st.sidebar.empty()
@@ -154,21 +155,32 @@ def load_eu_aggregated_data():
     
     for i, code in enumerate(eu_codes):
         filename = f"stromlast_historie_{code}.csv"
-        progress_text.text(f"Lade {COUNTRIES[code]}...")
+        progress_text.text(f"Updating & Loading {COUNTRIES[code]}...")
         
-        if os.path.exists(filename):
-            try:
-                # Nur relevante Spalten laden
-                temp_df = pd.read_csv(filename, usecols=['Zeitstempel', 'Last_GW'])
+        # --- MAJOR FIX HERE ---
+        # Instead of just reading the file, we call the update function!
+        # This ensures fresh data from the API before we aggregate.
+        try:
+            # We reuse your existing logic to fetch/update the CSV
+            temp_df = load_and_update_single_country(code, filename)
+            
+            if not temp_df.empty:
+                # Ensure datetime index and resample to 1h for clean summing
                 temp_df['Zeitstempel'] = pd.to_datetime(temp_df['Zeitstempel'], utc=True)
-                
-                # Index setzen und auf 1h resamplen (wichtig für saubere Addition)
                 temp_df.set_index('Zeitstempel', inplace=True)
+                
+                # Resample is crucial if timestamps differ slightly between countries
                 temp_df = temp_df.resample('1h').mean()
                 
                 df_list.append(temp_df)
-            except Exception:
-                st.sidebar.warning(f"Datei defekt: {filename}")
+                
+            # --- API RATE LIMIT PROTECTION ---
+            # Energy Charts API can block you if you request 9 countries instantly.
+            # A short pause is recommended.
+            time.sleep(0.5) 
+
+        except Exception as e:
+            st.sidebar.warning(f"Error updating {code}: {e}")
         
         progress_bar.progress((i + 1) / len(eu_codes))
     
@@ -178,12 +190,12 @@ def load_eu_aggregated_data():
     if not df_list:
         return pd.DataFrame()
 
-    # Pandas 'Sum' addiert DataFrames basierend auf dem Index (Zeitstempel)
-    # min_count=1 sorgt dafür, dass wir NaN bekommen, wenn Daten ganz fehlen, statt 0
-    st.sidebar.text("Berechne Summe...")
+    st.sidebar.text("Calculating Sum...")
+    
+    # Summing up all DataFrames (aligned by index)
     total_df = sum(df_list)
     
-    # Index wieder zur Spalte machen
+    # Reset index to make 'Zeitstempel' a column again for the rest of your script
     total_df = total_df.reset_index()
     
     return total_df
@@ -349,5 +361,6 @@ if not df_daily.empty:
 
 st.divider()
 st.caption("Datenquelle: Energy Charts (Fraunhofer ISE). Aggregation basiert auf lokalen CSV-Dateien.")
+
 
 
