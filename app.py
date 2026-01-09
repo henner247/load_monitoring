@@ -254,35 +254,47 @@ fig1 = go.Figure()
 years = pivot_table.columns
 
 if len(years) > 0:
-    current_year = years[-1]
-    last_year = years[-2] if len(years) > 1 else current_year
-    year_minus_2 = years[-3] if len(years) > 2 else current_year
-    year_minus_3 = years[-4] if len(years) > 3 else current_year
+    current_year = years[-1]       # The most recent year (e.g., 2026)
+    last_year = years[-2] if len(years) > 1 else current_year # The year before (e.g., 2025)
 else:
     current_year = None
+    last_year = None
 
-background_label_set = False
+# Flag to ensure we only add one legend entry for all the grey years
+grey_legend_added = False 
 
 for year in years:
-    color = '#708090'
-    width = 1.2
-    opacity = 0.5
-    name = "2015-2021"
+    # 1. DEFAULT SETTINGS (For all "other" years - Grey)
+    color = '#B0B0B0'   # Standard Grey
+    width = 1.5         # Thinner lines for background years
+    opacity = 0.5       # Semi-transparent
+    name = f"{years[0]}-{last_year - 1}" # Label for the grey group
     showlegend = False
     
-    if current_year and year < year_minus_3:
-        if not background_label_set:
-            showlegend = True
-            background_label_set = True
-    else:
+    # 2. OVERRIDES (Blue and Red)
+    if year == current_year:
+        color = 'red'
+        width = 4       # Thickest
+        opacity = 1.0
+        name = f"{year} (Aktuell)"
         showlegend = True
-        name = str(year)
+        
+    elif year == last_year:
+        color = '#1f77b4' # Plotly Blue
+        width = 2.5       # Medium thickness
+        opacity = 0.9
+        name = f"{year} (Vorjahr)"
+        showlegend = True
+        
+    else:
+        # Logic for Grey years legend: Only show it once (for the first year in the loop)
+        if not grey_legend_added:
+            showlegend = True
+            grey_legend_added = True
+        else:
+            showlegend = False
 
-    if year == year_minus_3: color, width, opacity = '#2ca02c', 2, 0.8
-    elif year == year_minus_2: color, width, opacity = '#1f77b4', 2, 0.8
-    elif year == last_year: color, width, opacity, name = 'black', 2, 0.85, f"{year} (Vorjahr)"
-    elif year == current_year: color, width, opacity, name = 'red', 4, 1.0, f"{year} (Aktuell)"
-
+    # 3. ADD TRACE
     fig1.add_trace(go.Scatter(
         x=x_axis_dates, 
         y=pivot_table[year], 
@@ -300,11 +312,11 @@ fig1.update_layout(
     template="plotly_white", 
     hovermode="x unified", 
     height=550,
+    # Legend positioned on top
     legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5),
     margin=dict(t=50)
 )
 st.plotly_chart(fig1, use_container_width=True)
-
 
 # --- CHART 2: Trend ---
 st.subheader("2. Trend-Analyse: Veränderung zum Vorjahr")
@@ -361,6 +373,7 @@ if not df_daily.empty:
 
 st.divider()
 st.caption("Datenquelle: Energy Charts (Fraunhofer ISE). Aggregation basiert auf lokalen CSV-Dateien.")
+
 
 
 
